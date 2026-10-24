@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thanos Snap - Video Disintegrator</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-wrapper">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-area">
+        <span class="logo-gem">🤌</span>
+        <div class="title-wrap">
+          <h1>Thanos Snap</h1>
+          <span class="subtext">Vision Gesture & Body Disintegration</span>
+        </div>
+      </div>
+      <div id="master-status-badge" class="badge active">ACTIVE</div>
+    </header>
+
+    <!-- Master Switch -->
+    <div class="card master-card">
+      <div class="control-label">
+        <span class="card-icon">⚡</span>
+        <div>
+          <div class="label-heading">Extension Enabled</div>
+          <div class="label-desc">Mirror video & detect hand gestures</div>
+        </div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggle-enabled" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <!-- Live Preview Box -->
+    <div class="card preview-card">
+      <div class="preview-header">
+        <span class="card-icon">👁️</span>
+        <span class="label-heading">Mirrored Preview Sandbox</span>
+        <button id="btn-toggle-cam" class="btn-text">Start Cam</button>
+      </div>
+
+      <div class="preview-viewport" id="preview-viewport">
+        <video id="popup-video" autoplay playsinline muted style="display:none;"></video>
+        <canvas id="popup-canvas"></canvas>
+        <div id="preview-placeholder" class="placeholder">
+          <span>Click "Start Cam" to test</span>
+        </div>
+      </div>
+
+      <div class="preview-actions">
+        <button id="btn-test-snap" class="btn btn-primary" title="Disintegrate your body">
+          <span>Snap! 💨</span>
+        </button>
+        <button id="btn-test-restore" class="btn btn-secondary" title="Restore your body">
+          <span>Restore 🔄</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Gesture Guide & Status Card -->
+    <div class="card gesture-card">
+      <div class="gesture-row">
+        <div class="gesture-icon">🤌</div>
+        <div class="gesture-info">
+          <div class="gesture-title">Finger Snap Gesture</div>
+          <div class="gesture-desc">Pinch thumb & middle finger, then snap open</div>
+        </div>
+        <span class="pill">Vanish</span>
+      </div>
+
+      <div class="gesture-row">
+        <div class="gesture-icon">✋</div>
+        <div class="gesture-info">
+          <div class="gesture-title">Open Palm (Hold 3s)</div>
+          <div class="gesture-desc">Show open palm to camera for 3 seconds</div>
+        </div>
+        <span class="pill green">Recover</span>
+      </div>
+
+      <div id="gesture-live-pill" class="gesture-status-bar">
+        <span>Vision Tracking: Ready ✋</span>
+      </div>
+    </div>
+
+    <!-- Features Toggles -->
+    <div class="card settings-card">
+      <div class="setting-item-row">
+        <div class="setting-text">
+          <div class="label-heading">🪞 Mirror Video Everywhere</div>
+          <div class="label-desc">Mirrored in Meet, Zoom, and all calls</div>
+        </div>
+        <label class="switch small">
+          <input type="checkbox" id="toggle-mirror" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item-row">
+        <div class="setting-text">
+          <div class="label-heading">In-Call Floating HUD</div>
+          <div class="label-desc">On-screen control badge in calls</div>
+        </div>
+        <label class="switch small">
+          <input type="checkbox" id="toggle-hud" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-title-row">
+          <label for="select-duration">Disintegration Speed</label>
+        </div>
+        <select id="select-duration" class="custom-select">
+          <option value="1500">Fast (1.5s)</option>
+          <option value="2400" selected>Cinematic (2.4s)</option>
+          <option value="3800">Epic Slow-Mo (3.8s)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Footer / Shortucts -->
+    <footer class="footer">
+      <div class="shortcut-tip">
+        <span>Shortcut: </span>
+        <kbd>Alt+Shift+S</kbd> to snap &middot; <kbd>Alt+Shift+R</kbd> to restore
+      </div>
+      <a href="test.html" target="_blank" class="test-arena-link">🚀 Open Full Test Arena</a>
+    </footer>
+  </div>
+
+  <script src="libs/selfie_segmentation/selfie_segmentation.js"></script>
+  <script src="libs/hands/hands.js"></script>
+  <script src="person_segmenter.js"></script>
+  <script src="gesture_detector.js"></script>
+  <script src="thanos_engine.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
