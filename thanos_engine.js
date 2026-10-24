@@ -196,6 +196,10 @@
       [this.mDil, this.mDilCtx] = pair(aw, ah);
       [this.mPrev, this.mPrevCtx] = pair(aw, ah);
       [this.mExcl, this.mExclCtx] = pair(aw, ah);
+      [this.mZone0, this.mZone0Ctx] = pair(aw, ah);
+      [this.mZone, this.mZoneCtx] = pair(aw, ah);
+      this.roomLocked = false;
+      this.gain = [1, 1, 1];
       [this.cov, this.covCtx] = pair(32, 18, { willReadFrequently: true });
       this.levels = [];
       let lw = Math.max(4, Math.round(w / 4)), lh = Math.max(4, Math.round(h / 4));
@@ -253,7 +257,8 @@
         const slot = this.ring[msg.id % this.ring.length];
         if (slot.id === msg.id) this._updatePlate(slot.c);
         this.hasMask = true;
-        if (this.state !== 'live') this._fillPlate();
+        // A locked room never changes, so its fill only needs computing once.
+        if (this.state !== 'live' && (!this.roomLocked || !this.hasFill)) this._fillPlate();
         return;
       }
       if (msg.type !== 'result') return;
@@ -327,6 +332,57 @@
       const ec = this.mExclCtx;
       ec.clearRect(0, 0, aw, ah);
       this._stamp(ec, this.mDil, Math.round(rad * 0.8));
+
+      // Influence zone (used once the room is captured): everything near you — your shadow on
+      // the wall/bed, light you block or bounce — is replaced too, fading out softly so there
+      // is no seam where the clean room meets the live picture.
+      const z0 = this.mZone0Ctx;
+      z0.clearRect(0, 0, aw, ah);
+      this._stamp(z0, this.mExcl, Math.round(rad * 2.5));
+      const zc = this.mZoneCtx;
+      zc.globalCompositeOperation = 'copy';
+      zc.filter = `blur(${Math.round(rad * 1.6)}px)`;
+      zc.drawImage(this.mZone0, 0, 0);
+      zc.filter = 'none';
+      zc.globalCompositeOperation = 'source-over';
+      zc.drawImage(this.mZone, 0, 0); // firm up the core, keep the long soft tail
+    }
+
+    /**
+     * Track camera auto-exposure / white-balance drift since the room was captured:
+     * per-channel ratio of live vs captured room, measured away from you.
+     */
+    _updateGain(frame) {
+      const gw = 64, gh = 36;
+      if (!this.gainCv) {
+        this.gainCv = Array.from({ length: 3 }, () => {
+          const c = mkCanvas(gw, gh);
+          return c.getContext('2d', { willReadFrequently: true });
+        });
+      }
+      const [lc, pc, zc] = this.gainCv;
+      lc.globalCompositeOperation = pc.globalCompositeOperation = zc.globalCompositeOperation = 'copy';
+      lc.drawImage(frame, 0, 0, gw, gh);
+      pc.drawImage(this.plate, 0, 0, gw, gh);
+      zc.drawImage(this.mZone, 0, 0, gw, gh);
+      const L = lc.getImageData(0, 0, gw, gh).data;
+      const P = pc.getImageData(0, 0, gw, gh).data;
+      const Z = zc.getImageData(0, 0, gw, gh).data;
+      const sl = [0, 0, 0], sp = [0, 0, 0];
+      let n = 0;
+      for (let i = 0; i < L.length; i += 4) {
+        if (Z[i + 3] > 6 || P[i + 3] < 250) continue;
+        // Skip clipped highlights / deep blacks — their ratio is meaningless.
+        const lum = L[i] + L[i + 1] + L[i + 2];
+        if (lum > 735 || lum < 30) continue;
+        for (let c = 0; c < 3; c++) { sl[c] += L[i + c]; sp[c] += P[i + c]; }
+        n++;
+      }
+      if (n < 40) return;
+      for (let c = 0; c < 3; c++) {
+        const g = Math.min(2, Math.max(0.5, sl[c] / Math.max(1, sp[c])));
+        this.gain[c] = this.gain[c] * 0.7 + g * 0.3;
+      }
     }
 
     /** Union of `src` shifted around a circle of radius r (a cheap GPU dilation). */
@@ -342,6 +398,11 @@
 
     _updatePlate(frame) {
       const { W, H } = this;
+      if (this.roomLocked) {
+        // Captured room is frozen (so your shadow never gets baked in); only follow exposure.
+        if (++this.frameCount % 3 === 0) this._updateGain(frame);
+        return;
+      }
       const t = this.tmpCtx;
       t.globalCompositeOperation = 'copy';
       t.drawImage(frame, 0, 0);
@@ -438,7 +499,15 @@
       let seen = 0;
       for (let i = 3; i < d.length; i += 4) if (d[i] > 200) seen++;
       this.coverage = seen / (32 * 18);
-      this.cb.coverage?.(this.coverage);
+      // If you walked out of frame on your own and the whole room got seen, lock it in.
+      if (!this.roomLocked && !this.capture && this.state === 'live' && this.coverage >= 0.98) this._lockRoom();
+      this.cb.coverage?.(this.coverage, this.roomLocked);
+    }
+
+    _lockRoom() {
+      this.roomLocked = true;
+      this.gain = [1, 1, 1];
+      this.hasFill = false;
     }
 
     /**
@@ -447,6 +516,7 @@
      */
     captureRoom() {
       if (this.destroyed || this.state !== 'live') return;
+      this.roomLocked = false;
       this.capture = { start: performance.now() };
       this._tickCapture();
     }
@@ -462,6 +532,7 @@
         this.capture = null;
         this._reportCoverage();
         const pct = Math.round((this.coverage || 0) * 100);
+        if (pct >= 90) this._lockRoom();
         this.holdStatusUntil = performance.now() + 5000;
         this._status(pct >= 97 ? `Room captured ✓ (${pct}%) — come back and snap!` : `Room ${pct}% captured — part of you was still in view, try again`);
       }
@@ -505,9 +576,21 @@
       if (!this.hasFill || alpha <= 0) return;
       const pf = this.pfillCtx;
       pf.globalCompositeOperation = 'copy';
-      pf.drawImage(this.fill, 0, 0);
+      if (this.roomLocked) {
+        // Exposure-match the captured room to the live camera, per channel.
+        const g = this.gain;
+        const gmax = Math.max(g[0], g[1], g[2]);
+        pf.filter = `brightness(${gmax})`;
+        pf.drawImage(this.fill, 0, 0);
+        pf.filter = 'none';
+        pf.globalCompositeOperation = 'multiply';
+        pf.fillStyle = `rgb(${(255 * g[0]) / gmax},${(255 * g[1]) / gmax},${(255 * g[2]) / gmax})`;
+        pf.fillRect(0, 0, this.W, this.H);
+      } else {
+        pf.drawImage(this.fill, 0, 0);
+      }
       pf.globalCompositeOperation = 'destination-in';
-      pf.drawImage(this.mDil, 0, 0, this.W, this.H);
+      pf.drawImage(this.roomLocked ? this.mZone : this.mDil, 0, 0, this.W, this.H);
       pf.globalCompositeOperation = 'source-over';
       o.globalAlpha = alpha;
       o.drawImage(this.pfill, 0, 0);

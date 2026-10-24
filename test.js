@@ -25,7 +25,7 @@ async function run(track) {
     onState: setState,
     onStatus: (t) => ($('status').textContent = t),
     onPalm: (p) => ($('palm').style.width = `${p * 100}%`),
-    onCoverage: (c) => ($('cov').textContent = `Room captured: ${Math.round(c * 100)}%`),
+    onCoverage: (c, locked) => ($('cov').textContent = locked ? 'Room locked ✓ — you will vanish completely' : `Room captured: ${Math.round(c * 100)}% — press Capture room`),
     onDebug: (d) => (lastDebug = d),
     onReady: (delegate) => console.log('[test] vision ready', delegate)
   });

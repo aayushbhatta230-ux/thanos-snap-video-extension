@@ -41,7 +41,7 @@
       onState: (s) => engine === current() && hud.setState(s),
       onStatus: (t) => engine === current() && hud.setStatus(t),
       onPalm: (p) => engine === current() && hud.setPalm(p),
-      onCoverage: (c) => engine === current() && hud.setCoverage(c)
+      onCoverage: (c, locked) => engine === current() && hud.setCoverage(c, locked)
     });
     const out = await engine.start(cam);
     engines.add(engine);
@@ -178,10 +178,10 @@
       },
       setStatus(t) { if (els && current()?.state !== 'gone') els.status.textContent = t; else if (els && /palm/i.test(t)) els.status.textContent = t; },
       setPalm(p) { if (els) els.barFill.style.width = `${Math.round(p * 100)}%`; },
-      setCoverage(c) {
+      setCoverage(c, locked) {
         if (!els) return;
-        els.hint.textContent = c >= 0.97 ? 'Room fully captured ✓' : `Room captured ${Math.round(c * 100)}% — press Capture room and step out of frame, or the spot behind you will look smudged.`;
-        els.hint.classList.toggle('warn', c < 0.97);
+        els.hint.textContent = locked ? 'Room locked ✓ — you will vanish completely' : c >= 0.97 ? 'Room fully captured ✓' : `Room captured ${Math.round(c * 100)}% — press Capture room and step out of frame, or the spot behind you will look smudged.`;
+        els.hint.classList.toggle('warn', !locked);
       }
     };
   })();
