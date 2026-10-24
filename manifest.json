@@ -1,103 +1,38 @@
 {
   "manifest_version": 3,
-  "name": "Thanos Snap - Video Disintegrator",
-  "version": "1.2.0",
-  "description": "Vanish your body into cosmic ash Thanos-style whenever you snap your fingers. Keeps your room visible, mirrors video, and recovers when holding an open palm for 3s.",
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  },
-  "permissions": [
-    "storage"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "name": "Thanos Snap",
+  "version": "2.0.0",
+  "description": "Snap your fingers on a video call and your body turns to dust — your room stays. Snap again or hold an open palm to come back.",
+  "minimum_chrome_version": "111",
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "permissions": ["storage"],
   "action": {
     "default_popup": "popup.html",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    },
-    "default_title": "Thanos Snap Video Controller"
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+    "default_title": "Thanos Snap"
   },
-  "background": {
-    "service_worker": "background.js"
-  },
+  "background": { "service_worker": "background.js" },
   "commands": {
-    "trigger_snap": {
-      "suggested_key": {
-        "default": "Alt+Shift+S",
-        "mac": "Alt+Shift+S"
-      },
-      "description": "Trigger Thanos Body Disintegration"
-    },
-    "restore_video": {
-      "suggested_key": {
-        "default": "Alt+Shift+R",
-        "mac": "Alt+Shift+R"
-      },
-      "description": "Restore Video"
-    }
+    "trigger_snap": { "suggested_key": { "default": "Alt+Shift+S" }, "description": "Snap (vanish / come back)" },
+    "restore_video": { "suggested_key": { "default": "Alt+Shift+R" }, "description": "Restore" }
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://meet.google.com/*",
-        "https://*.zoom.us/*",
-        "https://teams.microsoft.com/*",
-        "https://discord.com/*",
-        "https://meet.jit.si/*",
-        "https://webcamtests.com/*",
-        "http://localhost/*",
-        "http://127.0.0.1/*",
-        "<all_urls>"
-      ],
-      "js": [
-        "libs/selfie_segmentation/selfie_segmentation.js",
-        "libs/hands/hands.js",
-        "person_segmenter.js",
-        "gesture_detector.js",
-        "thanos_engine.js",
-        "injected.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN"
+      "matches": ["<all_urls>"],
+      "js": ["content_bridge.js"],
+      "run_at": "document_start"
     },
     {
-      "matches": [
-        "https://meet.google.com/*",
-        "https://*.zoom.us/*",
-        "https://teams.microsoft.com/*",
-        "https://discord.com/*",
-        "https://meet.jit.si/*",
-        "https://webcamtests.com/*",
-        "http://localhost/*",
-        "http://127.0.0.1/*",
-        "<all_urls>"
-      ],
-      "js": [
-        "content_bridge.js"
-      ],
-      "run_at": "document_start"
+      "matches": ["<all_urls>"],
+      "js": ["thanos_engine.js", "injected.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": [
-        "libs/**/*",
-        "icons/*",
-        "test.html",
-        "test.js",
-        "thanos_engine.js",
-        "person_segmenter.js",
-        "gesture_detector.js"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
+      "resources": ["vision.html", "vision.js", "gesture.js", "vendor/*", "vendor/wasm/*", "models/*"],
+      "matches": ["<all_urls>"]
     }
   ]
 }

@@ -1,52 +1,27 @@
 /**
- * ContentBridge.js - Isolated World Content Script
- * Passes extension URLs and storage settings to the Main World.
+ * content_bridge.js — ISOLATED world. Hands the extension URL and saved settings to the
+ * MAIN-world hook (injected.js) and relays popup / keyboard-shortcut commands.
  */
-
 (function () {
   'use strict';
+  const DEFAULTS = { enabled: true, hudVisible: true, duration: 2400, mirrorVideo: true, sensitivity: 60 };
 
-  // Inject extension base URL onto root element for MAIN world scripts
-  const baseUrl = chrome.runtime.getURL('');
-  document.documentElement.dataset.thanosExtensionUrl = baseUrl;
-  window.postMessage({ type: 'THANOS_SET_BASE_URL', url: baseUrl }, '*');
+  document.documentElement.dataset.thanosExtensionUrl = chrome.runtime.getURL('');
 
-  // Load saved settings from extension storage
-  chrome.storage.sync.get(
-    {
-      enabled: true,
-      hudVisible: true,
-      duration: 2400,
-      mirrorVideo: true
-    },
-    (items) => {
-      window.postMessage({ type: 'THANOS_UPDATE_SETTINGS', payload: items }, '*');
-    }
-  );
+  const send = (type, payload) => window.postMessage({ type, payload }, '*');
+  chrome.storage.sync.get(DEFAULTS, (items) => send('THANOS_UPDATE_SETTINGS', items));
 
-  // Listen for messages from extension popup or background service worker
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!message || !message.action) return;
-
-    if (message.action === 'TRIGGER_SNAP') {
-      window.postMessage({ type: 'THANOS_TRIGGER_SNAP' }, '*');
-      sendResponse({ status: 'ok' });
-    } else if (message.action === 'RESTORE_VIDEO') {
-      window.postMessage({ type: 'THANOS_RESTORE_VIDEO' }, '*');
-      sendResponse({ status: 'ok' });
-    } else if (message.action === 'UPDATE_SETTINGS') {
-      window.postMessage({ type: 'THANOS_UPDATE_SETTINGS', payload: message.settings }, '*');
-      sendResponse({ status: 'ok' });
-    }
-    return true;
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    const updated = {};
+    for (const [k, c] of Object.entries(changes)) updated[k] = c.newValue;
+    send('THANOS_UPDATE_SETTINGS', updated);
   });
 
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'sync') return;
-    const updated = {};
-    for (const [key, change] of Object.entries(changes)) {
-      updated[key] = change.newValue;
-    }
-    window.postMessage({ type: 'THANOS_UPDATE_SETTINGS', payload: updated }, '*');
+  chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+    if (msg?.action === 'TRIGGER_SNAP') send('THANOS_TRIGGER_SNAP');
+    else if (msg?.action === 'RESTORE_VIDEO') send('THANOS_RESTORE_VIDEO');
+    else return;
+    reply({ ok: true });
   });
 })();

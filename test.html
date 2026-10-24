@@ -1,357 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Thanos Snap - Vision Gestures & Body Disintegration Arena</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thanos Snap — Test Arena</title>
   <style>
-    :root {
-      --bg: #090514;
-      --card-bg: rgba(23, 14, 40, 0.75);
-      --border: rgba(168, 85, 247, 0.3);
-      --purple: #9333ea;
-      --purple-light: #c084fc;
-      --gold: #fbbf24;
-      --green: #22c55e;
-      --text: #f8fafc;
-      --text-dim: #94a3b8;
-    }
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    body {
-      background: var(--bg);
-      background-image: 
-        radial-gradient(circle at 10% 20%, rgba(147, 51, 234, 0.2) 0%, transparent 45%),
-        radial-gradient(circle at 90% 80%, rgba(217, 70, 239, 0.15) 0%, transparent 45%);
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 24px 20px;
-    }
-    .container {
-      width: 100%;
-      max-width: 1100px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 14px;
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-    .brand-icon {
-      font-size: 36px;
-      filter: drop-shadow(0 0 12px rgba(168, 85, 247, 0.8));
-    }
-    .brand h1 {
-      font-size: 22px;
-      background: linear-gradient(135deg, #fff, #c084fc);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .brand p {
-      font-size: 13px;
-      color: var(--text-dim);
-    }
-    .status-badge {
-      padding: 6px 14px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      background: rgba(34, 197, 94, 0.15);
-      color: var(--green);
-      border: 1px solid rgba(34, 197, 94, 0.4);
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 340px;
-      gap: 20px;
-    }
-    @media (max-width: 850px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-    }
-    .viewport-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 16px;
-      backdrop-filter: blur(12px);
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .screen-wrap {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 16 / 9;
-      background: #000;
-      border-radius: 12px;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #screen-canvas {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-    }
-    .overlay-placeholder {
-      position: absolute;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-      color: var(--text-dim);
-    }
-    .start-cam-btn {
-      background: linear-gradient(135deg, #7e22ce, #9333ea);
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      border-radius: 10px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      box-shadow: 0 4px 18px rgba(147, 51, 234, 0.4);
-      transition: all 0.2s;
-    }
-    .start-cam-btn:hover {
-      background: linear-gradient(135deg, #9333ea, #a855f7);
-      transform: translateY(-2px);
-    }
-    .mirror-badge {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      background: rgba(14, 10, 26, 0.8);
-      border: 1px solid var(--border);
-      padding: 4px 8px;
-      border-radius: 6px;
-      font-size: 11px;
-      color: #e9d5ff;
-      pointer-events: none;
-      backdrop-filter: blur(8px);
-    }
-    .action-bar {
-      display: flex;
-      gap: 12px;
-    }
-    .btn-action {
-      flex: 1;
-      padding: 12px 18px;
-      border-radius: 10px;
-      font-size: 14px;
-      font-weight: 700;
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: all 0.15s;
-    }
-    .btn-action:active {
-      transform: scale(0.97);
-    }
-    .btn-snap {
-      background: linear-gradient(135deg, #7e22ce, #9333ea);
-      color: white;
-      box-shadow: 0 4px 16px rgba(147, 51, 234, 0.4);
-    }
-    .btn-restore {
-      background: linear-gradient(135deg, #15803d, #16a34a);
-      color: white;
-      box-shadow: 0 4px 16px rgba(22, 163, 74, 0.4);
-    }
-    .sidebar {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-    .panel {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 18px;
-      backdrop-filter: blur(12px);
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .panel-title {
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--purple-light);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .gesture-box {
-      background: rgba(10, 6, 20, 0.6);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 10px;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .gesture-name {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 13px;
-      font-weight: 600;
-    }
-    .gesture-sub {
-      font-size: 11px;
-      color: var(--text-dim);
-    }
-    .meter-track {
-      width: 100%;
-      height: 8px;
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 4px;
-      overflow: hidden;
-      margin-top: 4px;
-    }
-    .meter-bar {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #22c55e, #4ade80);
-      transition: width 0.08s ease-out;
-    }
-    .status-pill {
-      font-size: 12px;
-      padding: 8px 12px;
-      border-radius: 8px;
-      background: rgba(168, 85, 247, 0.12);
-      border: 1px dashed rgba(168, 85, 247, 0.35);
-      color: #d8b4fe;
-      text-align: center;
-    }
-    .tips-card {
-      font-size: 12px;
-      color: var(--text-dim);
-      line-height: 1.6;
-    }
-    .tips-card kbd {
-      background: rgba(255, 255, 255, 0.12);
-      padding: 2px 5px;
-      border-radius: 4px;
-      color: #fff;
-    }
+    :root { --bg: #0b0816; --panel: #151025; --line: rgba(167,139,250,.22); --text: #ede9fe; --muted: #a1a1aa; --accent: #a855f7; --ok: #34d399; --warn: #fb923c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+    header h1 { font-size: 17px; margin: 0; flex: 1; }
+    .pill { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; padding: 4px 10px; border-radius: 99px; background: rgba(52,211,153,.12); color: var(--ok); }
+    .pill.off { background: rgba(251,146,60,.14); color: var(--warn); }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; padding: 18px 20px; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    .stage { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 16 / 9; border: 1px solid var(--line); }
+    .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .stage .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+    .stage .empty[hidden] { display: none; }
+    aside { display: grid; gap: 14px; align-content: start; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+    .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .9px; color: var(--muted); margin: 0; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    button, .file { appearance: none; border: 0; cursor: pointer; border-radius: 9px; padding: 9px 12px; font: 600 13px system-ui, sans-serif; color: #fff; background: #2a2142; }
+    button.primary { background: linear-gradient(135deg, #7c3aed, #a855f7); }
+    button.green { background: linear-gradient(135deg, #059669, #10b981); }
+    button:disabled { opacity: .45; cursor: default; }
+    .file input { display: none; }
+    label.opt { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    input[type=range] { width: 150px; accent-color: var(--accent); }
+    select { background: #2a2142; color: var(--text); border: 0; border-radius: 8px; padding: 6px 8px; }
+    #status { background: rgba(255,255,255,.05); border-radius: 9px; padding: 8px 10px; min-height: 20px; }
+    .meter { height: 6px; background: rgba(255,255,255,.08); border-radius: 6px; overflow: hidden; }
+    .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--ok), #a3e635); }
+    pre { margin: 0; font: 11px/1.5 ui-monospace, Consolas, monospace; color: #c4b5fd; white-space: pre-wrap; min-height: 60px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    kbd { background: #2a2142; border-radius: 4px; padding: 1px 5px; font-size: 11px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <div class="brand">
-        <span class="brand-icon">🤌</span>
-        <div>
-          <h1>Thanos Snap Vision & Body Disintegration Arena</h1>
-          <p>100% Vision-Driven Gestures &middot; Always Mirrored &middot; Room Background Stays Visible</p>
-        </div>
+  <header>
+    <h1>🫰 Thanos Snap — Test Arena</h1>
+    <span id="statePill" class="pill">idle</span>
+  </header>
+  <main>
+    <div>
+      <div class="stage">
+        <video id="out" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div class="empty" id="empty">Start your camera or load a video</div>
       </div>
-      <div id="status-badge" class="status-badge">READY</div>
-    </header>
-
-    <div class="grid">
-      <!-- Main Camera View -->
-      <div class="viewport-card">
-        <div class="screen-wrap" id="screen-wrap">
-          <canvas id="screen-canvas"></canvas>
-          <div class="mirror-badge">🪞 Mirrored Feed</div>
-          <div id="screen-placeholder" class="overlay-placeholder">
-            <button id="btn-start" class="start-cam-btn">📷 Initialize Camera (Zero Mic Required)</button>
-            <span>Allow camera access to test gestures and body disintegration</span>
-          </div>
-        </div>
-
-        <div class="action-bar">
-          <button id="btn-action-snap" class="btn-action btn-snap">
-            <span>Snap Fingers / Disintegrate Body 💨</span>
-          </button>
-          <button id="btn-action-restore" class="btn-action btn-restore">
-            <span>Restore Body (or Hold Palm 3s) 🔄</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Sidebar -->
-      <div class="sidebar">
-        <!-- Gesture Tracker Panel -->
-        <div class="panel">
-          <div class="panel-title">
-            <span>👁️</span>
-            <span>Vision Gesture Engine</span>
-          </div>
-
-          <div class="gesture-box">
-            <div class="gesture-name">
-              <span>🤌 Finger Snap Gesture</span>
-              <span style="color: #c084fc;">Pinch & Snap</span>
-            </div>
-            <div class="gesture-sub">Touch thumb & middle finger tip together, then snap open.</div>
-          </div>
-
-          <div class="gesture-box">
-            <div class="gesture-name">
-              <span>✋ Open Palm Recovery</span>
-              <span id="palm-timer-text" style="color: #86efac;">0.0s / 3.0s</span>
-            </div>
-            <div class="gesture-sub">Show open palm to camera for 3 seconds continuously.</div>
-            <div class="meter-track">
-              <div id="palm-meter-bar" class="meter-bar"></div>
-            </div>
-          </div>
-
-          <div id="gesture-status-pill" class="status-pill">
-            Waiting for camera...
-          </div>
-        </div>
-
-        <!-- Details Panel -->
-        <div class="panel">
-          <div class="panel-title">
-            <span>✨</span>
-            <span>Engine Features Active</span>
-          </div>
-
-          <div class="tips-card">
-            <p><strong>🪞 Mirrored:</strong> Video is mirrored horizontally everywhere so hand gestures feel natural.</p>
-            <p style="margin-top: 6px;"><strong>🏠 Room Preserved:</strong> Only your body fades into ash. The room background stays completely visible!</p>
-            <p style="margin-top: 6px;"><strong>🎙️ No Mic:</strong> Completely independent of audio.</p>
-            <p style="margin-top: 6px;"><strong>Hotkeys:</strong> <kbd>Alt+Shift+S</kbd> to snap &middot; <kbd>Alt+Shift+R</kbd> to restore.</p>
-          </div>
-        </div>
-      </div>
+      <p class="muted">Snap: press thumb + middle finger together, then snap so the middle finger hits your palm. Snap again (or hold an open palm for 3 s) to come back. Keys: <kbd>S</kbd> snap/restore · <kbd>D</kbd> debug overlay.</p>
     </div>
-  </div>
-
-  <script src="libs/selfie_segmentation/selfie_segmentation.js"></script>
-  <script src="libs/hands/hands.js"></script>
-  <script src="person_segmenter.js"></script>
-  <script src="gesture_detector.js"></script>
+    <aside>
+      <div class="card">
+        <h2>Source</h2>
+        <div class="row">
+          <button id="cam" class="primary">Start camera</button>
+          <label class="file">Load video…<input id="file" type="file" accept="video/*"></label>
+        </div>
+        <div id="status">Not started</div>
+        <div class="muted" id="cov"></div>
+      </div>
+      <div class="card">
+        <h2>Actions</h2>
+        <div class="row">
+          <button id="snap" class="primary" disabled>Snap</button>
+          <button id="restore" class="green" disabled>Restore</button>
+        </div>
+        <div class="muted">Palm hold</div>
+        <div class="meter"><i id="palm"></i></div>
+      </div>
+      <div class="card">
+        <h2>Settings</h2>
+        <label class="opt">Snap sensitivity <input id="sens" type="range" min="0" max="100" value="60"></label>
+        <label class="opt">Dust speed
+          <select id="dur"><option value="1600">Fast</option><option value="2400" selected>Cinematic</option><option value="3600">Slow-mo</option></select>
+        </label>
+        <label class="opt">Mirror video <input id="mirror" type="checkbox" checked></label>
+        <label class="opt">Debug overlay <input id="dbg" type="checkbox" checked></label>
+      </div>
+      <div class="card">
+        <h2>Detector</h2>
+        <pre id="feat">—</pre>
+      </div>
+    </aside>
+  </main>
   <script src="thanos_engine.js"></script>
   <script src="test.js"></script>
 </body>

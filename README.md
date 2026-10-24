@@ -1,53 +1,44 @@
-# 🤌 Thanos Snap - Video Disintegrator (Chrome Extension)
+# 🫰 Thanos Snap
 
-Turn your body into cosmic ash Thanos-style when you snap your fingers, while keeping your room background visible. Built with computer vision hand gesture recognition and real-time person segmentation—**100% independent of microphone audio**.
+Snap your fingers on a video call and your body crumbles into dust. Your actual room stays behind.
+Snap again, or hold an open palm for 3 seconds, and you reassemble.
 
----
+Works anywhere a site asks for your camera: Google Meet, Zoom (web), Teams, Discord, Jitsi and so on.
+It doesn't need the microphone; everything is done with vision.
 
-## 🌟 New Capabilities Added
+## Install
 
-1. **🚫 Zero Mic Dependency:**
-   - Microphone audio is **never required**. The extension is 100% vision-driven.
-2. **🤌 Vision-Based Finger Snap Recognition:**
-   - Real-time hand landmark tracking detects when your thumb and middle finger pinch together and snap open.
-3. **🪞 Mirrored Video Everywhere:**
-   - Horizontally flips video output (`scale(-1, 1)`) across all platforms (Google Meet, Zoom Web, Teams, Discord, test sandbox) so hand movements and your video feed feel completely natural like a real mirror.
-4. **🏠 Body-Only Disintegration (Room Background Stays Active):**
-   - Neural person segmentation isolates your body from the room.
-   - When snapped, **only your body** decomposes into drifting ash particles and fades out over 2.4s.
-   - The camera **does NOT go off or black**—your room background remains completely visible!
-5. **✋ 3-Second Open Palm Recovery:**
-   - Show an open palm (all 5 fingers extended and spread) to the camera.
-   - A glowing countdown ring charges up on screen (`3.0s... 2.0s... 1.0s...`).
-   - After holding for 3 seconds, your body smoothly materializes back into the video feed!
+1. Open `chrome://extensions` and turn on **Developer mode**.
+2. Click **Load unpacked** and pick this folder.
+3. If it was already loaded, click the reload icon on its card, then **reload the call tab**.
 
----
+## Use
 
-## 📂 Project Structure
+1. Join the call with your camera on. A small **Thanos Snap** HUD appears in the bottom-right.
+2. **Teach it your room:** lean out of frame for a second or two. The HUD shows `Room captured %`.
+   The extension learns the room from every pixel where you *aren't*. Anything it never saw gets
+   filled in from the surroundings, which is convincing but not perfect.
+3. **Snap:** press thumb and middle finger together, then snap so the middle finger slaps into your palm.
+   Keep your hand roughly facing the camera.
+4. **Come back:** snap again, or hold an open palm (all five fingers spread) for 3 s.
 
-- [`manifest.json`](manifest.json): Extension configuration (Manifest V3).
-- [`libs/`](libs/): Bundled local MediaPipe neural models (`selfie_segmentation` and `hands`).
-- [`person_segmenter.js`](person_segmenter.js): Body vs. room background neural segmentation & background plate persistence.
-- [`gesture_detector.js`](gesture_detector.js): Vision hand tracking for Pinch-Snap and 3-second Open Palm hold.
-- [`thanos_engine.js`](thanos_engine.js): Horizontal video mirroring, body particle physics, and on-screen recovery ring.
-- [`injected.js`](injected.js): `navigator.mediaDevices.getUserMedia` interceptor in the MAIN world with in-call floating HUD.
-- [`content_bridge.js`](content_bridge.js): Extension storage and URL bridge in the ISOLATED world.
-- [`popup.html`](popup.html), [`popup.js`](popup.js), [`popup.css`](popup.css): Mirrored camera sandbox and gesture status monitor.
-- [`test.html`](test.html), [`test.js`](test.js): Standalone full-screen testing arena with real-time palm hold meter.
+Shortcuts: `Alt+Shift+S` snap / come back, `Alt+Shift+R` restore. The HUD has buttons too.
 
----
+## Test arena
 
-## 🚀 How to Load & Test in Chrome
+Popup → **Open test arena**. It runs the same engine against your camera or a video file, with a debug
+overlay of hand landmarks and the live detector values (`thumb↔middle`, `middle→palm`).
+If snaps are missed, raise **Snap sensitivity**. If it fires by accident, lower it.
 
-1. Open Google Chrome and go to `chrome://extensions`.
-2. Enable **Developer mode** (toggle in the top-right corner).
-3. Click **Load unpacked** (top-left) and select:
-   ```text
-   C:\Users\joshi\.gemini\antigravity\scratch\thanos-snap-video-extension
-   ```
-4. If you already had it loaded, click the **Reload 🔄** icon on the extension card.
-5. Open [`test.html`](test.html) or join a Google Meet call:
-   - Your video is automatically mirrored.
-   - **Snap your fingers (pinch thumb & middle finger, then snap open)** -> Your body disintegrates into ash while your room stays visible!
-   - **Show your open palm for 3 seconds** -> Watch the glowing circular countdown ring charge up and your body materialize back!
-   - Hotkeys: <kbd>Alt+Shift+S</kbd> to snap, <kbd>Alt+Shift+R</kbd> to restore.
+## How it works
+
+| Piece | Job |
+|---|---|
+| `injected.js` (page) | Wraps `getUserMedia`, hands the call a processed camera track, draws the HUD (shadow DOM, Trusted-Types safe). |
+| `thanos_engine.js` (page) | Frame pipeline (`MediaStreamTrackProcessor` → canvas → `MediaStreamTrackGenerator`, so it keeps running when the tab is in the background). Learns a background plate of the room, fills unseen areas (push-pull + scanline fill), replaces your body with it, and renders the 20-layer dust animation. |
+| `vision.html` / `vision.js` (hidden extension iframe) | MediaPipe Tasks: `HandLandmarker` + `ImageSegmenter`, GPU with CPU fallback. Runs in the extension's origin, so Meet's CSP / Trusted Types can't block the WASM. |
+| `gesture.js` | Snap = thumb–middle contact followed, within ~400 ms, by the middle fingertip dropping sharply into the palm (tuned on recorded snaps; uses 3-D world landmarks, so distance to camera doesn't matter). Open palm = all fingers extended and spread. |
+| `content_bridge.js`, `background.js`, `popup.*` | Settings, shortcuts, popup. |
+
+Settings (popup): enable, snap sensitivity, dust speed, mirror outgoing video, show HUD.
+Enable and mirror changes apply the next time the call turns the camera on.
