@@ -42,8 +42,11 @@
         palm: opts.onPalm || null,
         debug: opts.onDebug || null,
         ready: opts.onReady || null,
-        coverage: opts.onCoverage || null
+        coverage: opts.onCoverage || null,
+        capture: opts.onCapture || null
       };
+      this.capture = null;
+      this.coverage = 0;
       this.state = 'live';
       this.W = 0; this.H = 0;
       this.port = null;
@@ -86,6 +89,7 @@
     snap() {
       if (this.state !== 'live' || this.destroyed) return false;
       if (!this.hasMask) { this._status('Still loading the vision models…'); return false; }
+      this.capture = null;
       this._fillPlate();
       this.dust = this._buildDust(this.cur);
       this.anim = { start: performance.now() };
@@ -180,7 +184,8 @@
       const pair = (cw, ch, opts) => { const c = mkCanvas(cw, ch); return [c, c.getContext('2d', opts)]; };
       [this.cur, this.curCtx] = pair(w, h);
       [this.out, this.outCtx] = pair(w, h);
-      [this.sent, this.sentCtx] = pair(w, h);
+      this.ring = Array.from({ length: 4 }, () => { const [c, ctx] = pair(w, h); return { c, ctx, id: -1 }; });
+      this.frameId = 0;
       [this.plate, this.plateCtx] = pair(w, h);
       [this.tmp, this.tmpCtx] = pair(w, h);
       [this.fill, this.fillCtx] = pair(w, h);
@@ -189,6 +194,8 @@
       [this.mHard, this.mHardCtx] = pair(aw, ah);
       [this.mDil0, this.mDil0Ctx] = pair(aw, ah);
       [this.mDil, this.mDilCtx] = pair(aw, ah);
+      [this.mPrev, this.mPrevCtx] = pair(aw, ah);
+      [this.mExcl, this.mExclCtx] = pair(aw, ah);
       [this.cov, this.covCtx] = pair(32, 18, { willReadFrequently: true });
       this.levels = [];
       let lw = Math.max(4, Math.round(w / 4)), lh = Math.max(4, Math.round(h / 4));
@@ -239,16 +246,20 @@
         this._status('Vision failed to load: ' + msg.message);
         return;
       }
-      if (msg.type !== 'result') return;
-      this.busy = false;
-      if (msg.mask) {
+      if (msg.type === 'mask') {
+        if (!msg.mask) return;
         this._updateMask(msg.mask);
         msg.mask.close();
-        this._updatePlate();
+        const slot = this.ring[msg.id % this.ring.length];
+        if (slot.id === msg.id) this._updatePlate(slot.c);
         this.hasMask = true;
         if (this.state !== 'live') this._fillPlate();
+        return;
       }
-      if (msg.status) this._status(msg.status);
+      if (msg.type !== 'result') return;
+      this.busy = false;
+      if (this.capture) this._tickCapture();
+      else if (msg.status && performance.now() > (this.holdStatusUntil || 0)) this._status(msg.status);
       this.cb.palm?.(msg.palm || 0);
       this.cb.debug?.({ hands: msg.hands || [], debug: msg.debug || [], state: this.state });
       for (const ev of msg.events || []) {
@@ -263,12 +274,15 @@
       if (this.busy && now - this.busySince < 1000) return;
       this.busy = true;
       this.busySince = now;
-      // Keep the exact frame being analysed so the returned mask lines up with it.
-      this.sentCtx.drawImage(this.cur, 0, 0);
+      // Keep the exact frame being analysed so its mask (which arrives later) lines up with it.
+      const id = ++this.frameId;
+      const slot = this.ring[id % this.ring.length];
+      slot.id = id;
+      slot.ctx.drawImage(this.cur, 0, 0);
       createImageBitmap(this.cur, { resizeWidth: this.aw, resizeHeight: this.ah, resizeQuality: 'medium' })
         .then((bmp) => {
           if (this.destroyed || !this.port) { bmp.close(); return; }
-          this.port.postMessage({ type: 'frame', bitmap: bmp, state: this.state }, [bmp]);
+          this.port.postMessage({ type: 'frame', bitmap: bmp, id, state: this.state }, [bmp]);
         })
         .catch(() => { this.busy = false; });
     }
@@ -281,44 +295,65 @@
       r.globalCompositeOperation = 'copy';
       r.drawImage(bmp, 0, 0, aw, ah);
 
-      // Hard mask: boost soft confidence so the body is fully opaque.
+      // Keep the previous hard mask: hiding uses the union of the last two masks, so a body
+      // that moved since the (slightly late) mask was computed is still fully covered.
+      this.mPrevCtx.globalCompositeOperation = 'copy';
+      this.mPrevCtx.drawImage(this.mHard, 0, 0);
+
+      // Hard mask: boost soft confidence so anything that is even partly you counts as you.
       const hc = this.mHardCtx;
       hc.globalCompositeOperation = 'copy';
       hc.drawImage(this.mRaw, 0, 0);
       hc.globalCompositeOperation = 'source-over';
-      hc.drawImage(this.mRaw, 0, 0);
-      hc.drawImage(this.mRaw, 0, 0);
+      for (let k = 0; k < 3; k++) hc.drawImage(this.mHard, 0, 0);
 
-      // Dilated mask: grow the body outline so no halo/edge of you leaks through when vanished.
-      const rad = Math.max(3, Math.round(aw * 0.016));
+      // Hide mask: union(prev, cur) grown by a generous margin, then made solid so there is
+      // no semi-transparent rim of you left — only a short feather outside the margin.
+      const rad = Math.max(4, Math.round(aw * 0.028));
       const d0 = this.mDil0Ctx;
       d0.clearRect(0, 0, aw, ah);
-      d0.drawImage(this.mHard, 0, 0);
-      for (let k = 0; k < 12; k++) {
-        const a = (k / 12) * Math.PI * 2;
-        d0.drawImage(this.mHard, Math.cos(a) * rad, Math.sin(a) * rad);
-      }
+      this._stamp(d0, this.mHard, rad);
+      this._stamp(d0, this.mPrev, rad);
       const dc = this.mDilCtx;
-      dc.clearRect(0, 0, aw, ah);
-      dc.filter = `blur(${Math.max(1, Math.round(rad * 0.5))}px)`;
+      dc.globalCompositeOperation = 'copy';
+      dc.filter = `blur(${Math.max(1, Math.round(rad * 0.35))}px)`;
       dc.drawImage(this.mDil0, 0, 0);
       dc.filter = 'none';
+      dc.globalCompositeOperation = 'source-over';
+      for (let k = 0; k < 3; k++) dc.drawImage(this.mDil, 0, 0);
+
+      // Exclusion mask for learning the room: wider still, so edges/motion blur of you
+      // never get baked into the room plate (that was the visible outline).
+      const ec = this.mExclCtx;
+      ec.clearRect(0, 0, aw, ah);
+      this._stamp(ec, this.mDil, Math.round(rad * 0.8));
     }
 
-    _updatePlate() {
+    /** Union of `src` shifted around a circle of radius r (a cheap GPU dilation). */
+    _stamp(ctx, src, r) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(src, 0, 0);
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        ctx.drawImage(src, Math.cos(a) * r, Math.sin(a) * r);
+        ctx.drawImage(src, Math.cos(a) * r * 0.5, Math.sin(a) * r * 0.5);
+      }
+    }
+
+    _updatePlate(frame) {
       const { W, H } = this;
       const t = this.tmpCtx;
       t.globalCompositeOperation = 'copy';
-      t.drawImage(this.sent, 0, 0);
+      t.drawImage(frame, 0, 0);
       t.globalCompositeOperation = 'destination-out';
-      t.drawImage(this.mDil, 0, 0, W, H);
+      t.drawImage(this.mExcl, 0, 0, W, H);
       t.globalCompositeOperation = 'source-over';
       const p = this.plateCtx;
-      p.globalAlpha = this.plateSeeded ? 0.4 : 1;
+      p.globalAlpha = this.plateSeeded && !this.capture ? 0.4 : 1;
       p.drawImage(this.tmp, 0, 0);
       p.globalAlpha = 1;
       this.plateSeeded = true;
-      if (++this.frameCount % 30 === 0) this._reportCoverage();
+      if (++this.frameCount % 15 === 0) this._reportCoverage();
     }
 
     /** Push-pull hole filling: room areas never seen get a smooth fill from their surroundings. */
@@ -396,14 +431,41 @@
     }
 
     _reportCoverage() {
-      if (!this.cb.coverage) return;
       const c = this.covCtx;
       c.clearRect(0, 0, 32, 18);
       c.drawImage(this.plate, 0, 0, 32, 18);
       const d = c.getImageData(0, 0, 32, 18).data;
-      let sum = 0;
-      for (let i = 3; i < d.length; i += 4) sum += d[i];
-      this.cb.coverage(sum / (255 * 32 * 18));
+      let seen = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 200) seen++;
+      this.coverage = seen / (32 * 18);
+      this.cb.coverage?.(this.coverage);
+    }
+
+    /**
+     * Guided room capture: countdown so you can step out of frame, then a couple of seconds
+     * where the room plate learns at full strength. Afterwards nothing behind you is guessed.
+     */
+    captureRoom() {
+      if (this.destroyed || this.state !== 'live') return;
+      this.capture = { start: performance.now() };
+      this._tickCapture();
+    }
+
+    _tickCapture() {
+      const cap = this.capture;
+      const t = (performance.now() - cap.start) / 1000;
+      if (t < 3) {
+        this._status(`Step out of frame… ${Math.ceil(3 - t)}`);
+      } else if (t < 5.5) {
+        this._status('Capturing your room… stay out');
+      } else {
+        this.capture = null;
+        this._reportCoverage();
+        const pct = Math.round((this.coverage || 0) * 100);
+        this.holdStatusUntil = performance.now() + 5000;
+        this._status(pct >= 97 ? `Room captured ✓ (${pct}%) — come back and snap!` : `Room ${pct}% captured — part of you was still in view, try again`);
+      }
+      this.cb.capture?.(this.capture ? 'capturing' : 'done');
     }
 
     // ------------------------------------------------------------------ rendering

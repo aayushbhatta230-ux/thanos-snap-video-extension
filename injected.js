@@ -113,6 +113,8 @@
       button.act:active { transform: scale(.97); }
       button.act[hidden] { display: none; }
       button.restore { background: linear-gradient(135deg, #059669, #10b981); }
+      button.ghost { background: rgba(255,255,255,.1); font-weight: 600; }
+      .hint.warn { color: #fbbf24; }
     `;
 
     function build() {
@@ -126,11 +128,12 @@
       els.hint = h('div', { class: 'hint' }, '');
       els.snap = h('button', { class: 'act', title: 'Alt+Shift+S', onclick: () => current()?.snap() }, 'Snap');
       els.restore = h('button', { class: 'act restore', title: 'Alt+Shift+R', onclick: () => current()?.restore(), hidden: '' }, 'Restore');
+      els.capture = h('button', { class: 'act ghost', title: 'Step out of frame so it learns the room behind you', onclick: () => current()?.captureRoom() }, 'Capture room');
       const mini = h('button', { class: 'mini', title: 'Minimise', onclick: (e) => { e.stopPropagation(); minimized = !minimized; els.card.classList.toggle('min', minimized); mini.textContent = minimized ? '+' : '–'; } }, '–');
       els.head = h('div', { class: 'head' }, h('span', { class: 'dot' }), h('span', { class: 'title' }, 'Thanos Snap'), els.state, mini);
       els.card = h('div', { class: 'card' },
         els.head,
-        h('div', { class: 'body' }, els.status, h('div', { class: 'bar' }, els.barFill), els.hint, h('div', { class: 'row' }, els.snap, els.restore)));
+        h('div', { class: 'body' }, els.status, h('div', { class: 'bar' }, els.barFill), els.hint, h('div', { class: 'row' }, els.capture, els.snap, els.restore)));
       els.wrap = h('div', { class: 'wrap' }, els.card);
       root.append(els.wrap);
       draggable(els.wrap, els.head);
@@ -168,6 +171,7 @@
         els.card.classList.add(s);
         els.state.textContent = labels[s] || s;
         els.snap.hidden = s !== 'live';
+        els.capture.hidden = s !== 'live';
         els.restore.hidden = s !== 'gone';
         if (s === 'gone') els.status.textContent = 'Vanished. Snap again or hold an open palm 3s.';
         if (s !== 'gone') els.barFill.style.width = '0';
@@ -176,7 +180,8 @@
       setPalm(p) { if (els) els.barFill.style.width = `${Math.round(p * 100)}%`; },
       setCoverage(c) {
         if (!els) return;
-        els.hint.textContent = c > 0.97 ? 'Room fully captured ✓' : `Room captured ${Math.round(c * 100)}% — lean out of frame for a second to capture the rest.`;
+        els.hint.textContent = c >= 0.97 ? 'Room fully captured ✓' : `Room captured ${Math.round(c * 100)}% — press Capture room and step out of frame, or the spot behind you will look smudged.`;
+        els.hint.classList.toggle('warn', c < 0.97);
       }
     };
   })();

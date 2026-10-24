@@ -10,6 +10,7 @@ function setState(s) {
   $('statePill').className = 'pill' + (s === 'live' ? '' : ' off');
   $('snap').disabled = s !== 'live';
   $('restore').disabled = s !== 'gone';
+  $('capture').disabled = s !== 'live';
 }
 
 async function run(track) {
@@ -63,6 +64,7 @@ window.runVideoUrl = runVideoUrl;
 
 $('snap').onclick = () => engine?.snap();
 $('restore').onclick = () => engine?.restore();
+$('capture').onclick = () => engine?.captureRoom();
 $('sens').oninput = () => engine?.setOptions({ sensitivity: Number($('sens').value) });
 $('dur').onchange = () => engine?.setOptions({ duration: Number($('dur').value) });
 $('mirror').onchange = () => engine?.setOptions({ mirror: $('mirror').checked });

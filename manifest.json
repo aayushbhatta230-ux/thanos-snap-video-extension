@@ -69,6 +69,7 @@
         "vision.html",
         "vision.js",
         "gesture.js",
+        "seg_worker.js",
         "vendor/*",
         "vendor/wasm/*",
         "models/*"

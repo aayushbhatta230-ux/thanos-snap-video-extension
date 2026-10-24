@@ -3,19 +3,30 @@
  * so MediaPipe's WASM loads even on sites like Google Meet whose CSP / Trusted Types
  * would block it in the page itself.
  *
+ * Hand tracking runs here on every frame (snaps are fast). Person segmentation runs in
+ * seg_worker.js in parallel and takes whichever frame is current when it's free.
+ *
  * Protocol (over a MessageChannel handed in with {type:'thanos-init'}):
- *   in : {type:'frame', bitmap, state}   |  {type:'settings', sensitivity}
+ *   in : {type:'frame', bitmap, id, state}  |  {type:'settings', sensitivity}
  *   out: {type:'ready', delegate}  |  {type:'error', message}
- *        {type:'result', mask, maskW, maskH, events, status, palm, hands, debug}
+ *        {type:'result', events, status, palm, hands, debug, ms}
+ *        {type:'mask', mask, id, ms}      (mask is for frame `id`)
  */
-import { FilesetResolver, HandLandmarker, ImageSegmenter } from './vendor/vision_bundle.mjs';
+import { FilesetResolver, HandLandmarker } from './vendor/vision_bundle.mjs';
 import { GestureTracker } from './gesture.js';
+
+const params = new URLSearchParams(location.search);
+// Multiclass model segments the whole body (hair, skin, clothes) far better than the
+// head-and-shoulders selfie model, which misses laps/legs. ?seg=fast picks the light model.
+const MULTICLASS = params.get('seg') !== 'fast';
+const PREFERRED = params.get('delegate') === 'CPU' ? 'CPU' : 'GPU';
 
 let port = null;
 let hand = null;
-let seg = null;
 let lastTs = 0;
-let frameNo = 0;
+let segWorker = null;
+let segReady = false;
+let segBusy = false;
 const tracker = new GestureTracker();
 
 window.addEventListener('message', (e) => {
@@ -26,42 +37,46 @@ window.addEventListener('message', (e) => {
   init().catch((err) => port.postMessage({ type: 'error', message: String(err?.message || err) }));
 });
 
-const PREFERRED = new URLSearchParams(location.search).get('delegate') === 'CPU' ? 'CPU' : 'GPU';
-
-async function createWithFallback(Task, fileset, options) {
-  if (PREFERRED === 'CPU') {
-    return { task: await Task.createFromOptions(fileset, { ...options, baseOptions: { ...options.baseOptions, delegate: 'CPU' } }), delegate: 'CPU' };
-  }
-  try {
-    return { task: await Task.createFromOptions(fileset, { ...options, baseOptions: { ...options.baseOptions, delegate: 'GPU' } }), delegate: 'GPU' };
-  } catch (err) {
-    console.warn('[ThanosVision] GPU delegate failed, using CPU', err);
-    return { task: await Task.createFromOptions(fileset, { ...options, baseOptions: { ...options.baseOptions, delegate: 'CPU' } }), delegate: 'CPU' };
-  }
-}
-
-async function init() {
-  const fileset = await FilesetResolver.forVisionTasks(new URL('vendor/wasm', location.href).href);
-  const h = await createWithFallback(HandLandmarker, fileset, {
-    baseOptions: { modelAssetPath: new URL('models/hand_landmarker.task', location.href).href },
+async function createHand(fileset, delegate) {
+  return HandLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: new URL('models/hand_landmarker.task', location.href).href, delegate },
     runningMode: 'VIDEO',
     numHands: 1,
     minHandDetectionConfidence: 0.5,
     minHandPresenceConfidence: 0.5,
     minTrackingConfidence: 0.4
   });
-  const s = await createWithFallback(ImageSegmenter, fileset, {
-    baseOptions: { modelAssetPath: new URL('models/selfie_segmenter_landscape.tflite', location.href).href },
-    runningMode: 'VIDEO',
-    outputConfidenceMasks: true,
-    outputCategoryMask: false
-  });
-  hand = h.task;
-  seg = s.task;
-  port.postMessage({ type: 'ready', delegate: `${h.delegate}/${s.delegate}` });
 }
 
-async function onMessage(e) {
+async function init() {
+  segWorker = new Worker('seg_worker.js');
+  const segUp = new Promise((resolve, reject) => {
+    segWorker.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === 'ready') { segReady = true; resolve(m.delegate); }
+      else if (m.type === 'error') reject(new Error(m.message));
+      else if (m.type === 'mask') {
+        segBusy = false;
+        port.postMessage(m, m.mask ? [m.mask] : []);
+      }
+    };
+  });
+  segWorker.postMessage({ type: 'init', multiclass: MULTICLASS, delegate: PREFERRED });
+
+  const fileset = await FilesetResolver.forVisionTasks(new URL('vendor/wasm', location.href).href);
+  let handDelegate = PREFERRED;
+  try {
+    hand = await createHand(fileset, handDelegate);
+  } catch (err) {
+    console.warn('[ThanosVision] GPU delegate failed, using CPU', err);
+    handDelegate = 'CPU';
+    hand = await createHand(fileset, 'CPU');
+  }
+  const segDelegate = await segUp;
+  port.postMessage({ type: 'ready', delegate: `hand:${handDelegate} seg:${segDelegate}` });
+}
+
+function onMessage(e) {
   const msg = e.data;
   if (msg.type === 'settings') {
     if (msg.sensitivity != null) tracker.setSensitivity(msg.sensitivity);
@@ -69,49 +84,35 @@ async function onMessage(e) {
   }
   if (msg.type !== 'frame') return;
   const bitmap = msg.bitmap;
-  if (!hand || !seg) { bitmap.close(); port.postMessage({ type: 'result', events: [], status: 'Loading models…' }); return; }
+  if (!hand) { bitmap.close(); port.postMessage({ type: 'result', events: [], status: 'Loading models…' }); return; }
 
   try {
     let ts = performance.now();
     if (ts <= lastTs) ts = lastTs + 1;
     lastTs = ts;
-
     const t0 = performance.now();
     const hr = hand.detectForVideo(bitmap, ts);
-    const t1 = performance.now();
-    const hands = (hr.worldLandmarks || []).map((world, i) => ({
-      world,
-      label: `hand${i + 1}`
-    }));
+    const handMs = Math.round(performance.now() - t0);
+
+    // Hand the same frame to the segmenter if it's free (transfer, no copy).
+    if (segReady && !segBusy) {
+      segBusy = true;
+      segWorker.postMessage({ type: 'frame', bitmap, id: msg.id }, [bitmap]);
+    } else {
+      bitmap.close();
+    }
+
+    const hands = (hr.worldLandmarks || []).map((world, i) => ({ world, label: `hand${i + 1}` }));
     const g = tracker.update(hands, ts, msg.state);
-
-    let maskData = null, maskW = 0, maskH = 0;
-    // Hand tracking every frame (snaps are fast); the person mask can run at half rate.
-    if (frameNo++ % 2 === 0) seg.segmentForVideo(bitmap, ts, (result) => {
-      const m = result.confidenceMasks?.[0];
-      if (!m) return;
-      maskW = m.width; maskH = m.height;
-      const conf = m.getAsFloat32Array();
-      maskData = new Uint8ClampedArray(maskW * maskH * 4);
-      for (let i = 0, j = 3; i < conf.length; i++, j += 4) {
-        maskData[j - 3] = maskData[j - 2] = maskData[j - 1] = 255;
-        maskData[j] = conf[i] * 255;
-      }
-    });
-    bitmap.close();
-    const t2 = performance.now();
-
-    const mask = maskData ? await createImageBitmap(new ImageData(maskData, maskW, maskH)) : null;
     port.postMessage({
       type: 'result',
-      mask, maskW, maskH,
       events: g.events,
       status: g.status,
       palm: g.palm,
       hands: (hr.landmarks || []).map((lm) => lm.map((p) => [p.x, p.y])),
       debug: g.debug,
-      ms: [Math.round(t1 - t0), Math.round(t2 - t1), Math.round(performance.now() - t2)]
-    }, mask ? [mask] : []);
+      ms: handMs
+    });
   } catch (err) {
     try { bitmap.close(); } catch (_) {}
     port.postMessage({ type: 'result', events: [], status: 'Vision error', error: String(err?.message || err) });

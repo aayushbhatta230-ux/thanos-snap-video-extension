@@ -50,7 +50,7 @@
         <canvas id="overlay"></canvas>
         <div class="empty" id="empty">Start your camera or load a video</div>
       </div>
-      <p class="muted">Snap: press thumb + middle finger together, then snap so the middle finger hits your palm. Snap again (or hold an open palm for 3 s) to come back. Keys: <kbd>S</kbd> snap/restore · <kbd>D</kbd> debug overlay.</p>
+      <p class="muted">First press <b>Capture room</b> and step out of frame for ~5 s so it learns what's behind you. Snap: press thumb + middle finger together, then snap so the middle finger hits your palm. Snap again (or hold an open palm for 3 s) to come back. Keys: <kbd>S</kbd> snap/restore · <kbd>D</kbd> debug overlay.</p>
     </div>
     <aside>
       <div class="card">
@@ -65,6 +65,7 @@
       <div class="card">
         <h2>Actions</h2>
         <div class="row">
+          <button id="capture" disabled>Capture room</button>
           <button id="snap" class="primary" disabled>Snap</button>
           <button id="restore" class="green" disabled>Restore</button>
         </div>
