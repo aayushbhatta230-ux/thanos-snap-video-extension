@@ -4,35 +4,78 @@
   "version": "2.0.0",
   "description": "Snap your fingers on a video call and your body turns to dust — your room stays. Snap again or hold an open palm to come back.",
   "minimum_chrome_version": "111",
-  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
-  "permissions": ["storage"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
     "default_title": "Thanos Snap"
   },
-  "background": { "service_worker": "background.js" },
+  "background": {
+    "service_worker": "background.js"
+  },
   "commands": {
-    "trigger_snap": { "suggested_key": { "default": "Alt+Shift+S" }, "description": "Snap (vanish / come back)" },
-    "restore_video": { "suggested_key": { "default": "Alt+Shift+R" }, "description": "Restore" }
+    "trigger_snap": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Snap (vanish / come back)"
+    },
+    "restore_video": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Restore"
+    }
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content_bridge.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content_bridge.js"
+      ],
       "run_at": "document_start"
     },
     {
-      "matches": ["<all_urls>"],
-      "js": ["thanos_engine.js", "injected.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "thanos_engine.js",
+        "injected.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["vision.html", "vision.js", "gesture.js", "vendor/*", "vendor/wasm/*", "models/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "vision.html",
+        "vision.js",
+        "gesture.js",
+        "vendor/*",
+        "vendor/wasm/*",
+        "models/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
