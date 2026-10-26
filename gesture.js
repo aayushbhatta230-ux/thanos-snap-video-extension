@@ -1,48 +1,129 @@
 /**
- * gesture.js — finger-snap + open-palm recognition from MediaPipe hand landmarks.
+ * gesture.js — Angle-Invariant Finger-Snap & Open-Palm Recognition
  *
- * A real snap has a distinctive shape over ~100–300 ms:
- *   1. ARM:     thumb tip pressed against middle fingertip (held for a couple of frames)
- *   2. RELEASE: thumb slides off and the middle finger slams into the palm
- * The hand often blurs out of tracking during step 2, so the armed state survives
- * short dropouts instead of resetting.
+ * Designed to detect snaps from ANY angle (frontal, 45°, side-profile, tilted, top-down).
  *
- * Distances use MediaPipe's metric world landmarks, normalised by palm size,
- * so they don't depend on how far you sit from the camera or how the hand is rotated.
+ * Core Enhancements for All-Angle Reliability:
+ *  1. Canonical Hand Scale & Frame: Normalizes metrics by combined palm length and
+ *     palm width, making feature distances invariant to perspective foreshortening
+ *     when hands are tilted or viewed from the side.
+ *  2. Multi-Point Contact Detection: Checks thumb tip against middle tip and middle DIP
+ *     in both 3D world space and 2D projected space.
+ *  3. Anatomical Slam Detection: Middle finger slams into the thenar eminence (base of thumb /
+ *     lower palm) while the thumb tip pulls away.
+ *  4. Angle-Invariant Open Palm: Evaluates bone-chain straightness along each individual
+ *     finger chain, independent of camera tilt.
  */
 
-const WRIST = 0, THUMB_TIP = 4, INDEX_MCP = 5, INDEX_PIP = 6, INDEX_TIP = 8,
-  MIDDLE_MCP = 9, MIDDLE_PIP = 10, MIDDLE_TIP = 12, RING_MCP = 13, RING_PIP = 14, RING_TIP = 16,
-  PINKY_MCP = 17, PINKY_PIP = 18, PINKY_TIP = 20;
+const WRIST = 0,
+  THUMB_CMC = 1, THUMB_MCP = 2, THUMB_IP = 3, THUMB_TIP = 4,
+  INDEX_MCP = 5, INDEX_PIP = 6, INDEX_DIP = 7, INDEX_TIP = 8,
+  MIDDLE_MCP = 9, MIDDLE_PIP = 10, MIDDLE_DIP = 11, MIDDLE_TIP = 12,
+  RING_MCP = 13, RING_PIP = 14, RING_DIP = 15, RING_TIP = 16,
+  PINKY_MCP = 17, PINKY_PIP = 18, PINKY_DIP = 19, PINKY_TIP = 20;
 
-const d3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
+// 3D Euclidean distance
+const d3 = (a, b) => {
+  if (!a || !b) return 999;
+  const dx = a.x - b.x, dy = a.y - b.y, dz = (a.z || 0) - (b.z || 0);
+  return Math.hypot(dx, dy, dz);
+};
 
-export function handFeatures(lm) {
-  const s = d3(lm[WRIST], lm[MIDDLE_MCP]) || 1e-6;
-  const palm = {
-    x: (lm[WRIST].x + lm[INDEX_MCP].x + lm[MIDDLE_MCP].x + lm[RING_MCP].x + lm[PINKY_MCP].x) / 5,
-    y: (lm[WRIST].y + lm[INDEX_MCP].y + lm[MIDDLE_MCP].y + lm[RING_MCP].y + lm[PINKY_MCP].y) / 5,
-    z: (lm[WRIST].z + lm[INDEX_MCP].z + lm[MIDDLE_MCP].z + lm[RING_MCP].z + lm[PINKY_MCP].z) / 5
+// 2D Euclidean distance (screen projection)
+const d2 = (a, b) => {
+  if (!a || !b) return 999;
+  return Math.hypot(a.x - b.x, a.y - b.y);
+};
+
+/**
+ * Extract robust, angle-invariant features from 3D world landmarks and 2D landmarks
+ */
+export function handFeatures(worldLm, normLm = null) {
+  if (!worldLm || worldLm.length < 21) return null;
+
+  // 1. Stable hand scale factor: combines palm length and palm width
+  const palmLen = d3(worldLm[WRIST], worldLm[MIDDLE_MCP]) || 0.08;
+  const palmWidth = d3(worldLm[INDEX_MCP], worldLm[PINKY_MCP]) || 0.06;
+  const s = Math.max(palmLen, palmWidth * 1.25, 0.04);
+
+  // 2. Anatomical Palm Landing Target:
+  // When a human snaps, the middle finger slams into the thenar eminence (base of thumb / lower palm).
+  const thenarBase = {
+    x: (worldLm[THUMB_CMC].x + worldLm[THUMB_MCP].x + worldLm[WRIST].x) / 3,
+    y: (worldLm[THUMB_CMC].y + worldLm[THUMB_MCP].y + worldLm[WRIST].y) / 3,
+    z: (worldLm[THUMB_CMC].z + worldLm[THUMB_MCP].z + worldLm[WRIST].z) / 3
   };
-  const ext = (tip, pip) => d3(lm[tip], lm[WRIST]) / (d3(lm[pip], lm[WRIST]) || 1e-6);
+
+  const palmCenter = {
+    x: (worldLm[WRIST].x + worldLm[INDEX_MCP].x + worldLm[MIDDLE_MCP].x + worldLm[RING_MCP].x + worldLm[PINKY_MCP].x) / 5,
+    y: (worldLm[WRIST].y + worldLm[INDEX_MCP].y + worldLm[MIDDLE_MCP].y + worldLm[RING_MCP].y + worldLm[PINKY_MCP].y) / 5,
+    z: (worldLm[WRIST].z + worldLm[INDEX_MCP].z + worldLm[MIDDLE_MCP].z + worldLm[RING_MCP].z + worldLm[PINKY_MCP].z) / 5
+  };
+
+  // 3. Pinch Contact Detection:
+  // Strictly between THUMB TIP and Middle tip / Middle DIP (or Index tip).
+  const thumbTipToMiddleTip = d3(worldLm[THUMB_TIP], worldLm[MIDDLE_TIP]) / s;
+  const thumbTipToMiddleDip = d3(worldLm[THUMB_TIP], worldLm[MIDDLE_DIP]) / s;
+  const thumbTipToIndexTip = d3(worldLm[THUMB_TIP], worldLm[INDEX_TIP]) / s;
+
+  let pinch3D = Math.min(thumbTipToMiddleTip, thumbTipToMiddleDip * 1.05);
+
+  let pinch2D = 999;
+  if (normLm && normLm.length >= 21) {
+    const s2d = Math.max(d2(normLm[WRIST], normLm[MIDDLE_MCP]), d2(normLm[INDEX_MCP], normLm[PINKY_MCP]) * 1.2, 0.05);
+    const p2d_tm = d2(normLm[THUMB_TIP], normLm[MIDDLE_TIP]) / s2d;
+    const p2d_tmdip = d2(normLm[THUMB_TIP], normLm[MIDDLE_DIP]) / s2d;
+    pinch2D = Math.min(p2d_tm, p2d_tmdip);
+  }
+
+  // Blended pinch metric: if fingers contact in 3D or 2D projection, count as contact
+  const effectivePinch = Math.min(pinch3D, pinch2D * 1.1);
+
+  // 4. Middle finger curl / slam measurement:
+  // Distance to the thenar landing base and palm center
+  const middleToThenar = d3(worldLm[MIDDLE_TIP], thenarBase) / s;
+  const middleToPalm = d3(worldLm[MIDDLE_TIP], palmCenter) / s;
+  const effectiveSlamDist = Math.min(middleToThenar, middleToPalm);
+
+  // 5. Angle-Invariant Finger Extension:
+  // Evaluates extension along each finger's bone chain
+  const isStraight = (tip, pip, mcp) => {
+    const tipMcp = d3(worldLm[tip], worldLm[mcp]);
+    const pipMcp = d3(worldLm[pip], worldLm[mcp]) || 1e-6;
+    return tipMcp / pipMcp;
+  };
+
+  const extIndex = isStraight(INDEX_TIP, INDEX_PIP, INDEX_MCP);
+  const extMiddle = isStraight(MIDDLE_TIP, MIDDLE_PIP, MIDDLE_MCP);
+  const extRing = isStraight(RING_TIP, RING_PIP, RING_MCP);
+  const extPinky = isStraight(PINKY_TIP, PINKY_PIP, PINKY_MCP);
+
+  // Thumb out: distance from thumb tip to pinky knuckle
+  const thumbOut = d3(worldLm[THUMB_TIP], worldLm[PINKY_MCP]) / s;
+  const fingerSpread = d3(worldLm[INDEX_TIP], worldLm[PINKY_TIP]) / s;
+
   return {
-    thumbMiddle: d3(lm[THUMB_TIP], lm[MIDDLE_TIP]) / s,
-    thumbIndex: d3(lm[THUMB_TIP], lm[INDEX_TIP]) / s,
-    middleToPalm: d3(lm[MIDDLE_TIP], palm) / s,
-    thumbOut: d3(lm[THUMB_TIP], lm[PINKY_MCP]) / s,
-    spread: d3(lm[INDEX_TIP], lm[PINKY_TIP]) / s,
-    extIndex: ext(INDEX_TIP, INDEX_PIP),
-    extMiddle: ext(MIDDLE_TIP, MIDDLE_PIP),
-    extRing: ext(RING_TIP, RING_PIP),
-    extPinky: ext(PINKY_TIP, PINKY_PIP)
+    thumbMiddle: thumbTipToMiddleTip,
+    effectivePinch,
+    pinch3D,
+    pinch2D,
+    middleToPalm,
+    middleToThenar,
+    effectiveSlamDist,
+    thumbOut,
+    spread: fingerSpread,
+    extIndex,
+    extMiddle,
+    extRing,
+    extPinky
   };
 }
 
 export class GestureTracker {
-  constructor({ sensitivity = 60, palmHoldMs = 3000 } = {}) {
+  constructor({ sensitivity = 65, palmHoldMs = 3000 } = {}) {
     this.palmHoldMs = palmHoldMs;
     this.setSensitivity(sensitivity);
-    this.hands = new Map(); // handedness -> snap state
+    this.hands = new Map();
     this.lastSnapAt = -1e9;
     this.palmStart = null;
     this.palmLastSeen = -1e9;
@@ -52,82 +133,167 @@ export class GestureTracker {
   setSensitivity(v) {
     const k = Math.max(0, Math.min(100, Number(v))) / 100;
     this.sensitivity = k * 100;
-    // Tuned on recorded snaps: armed pose ≈ thumb↔middle 0.35–0.44, middle→palm ≈ 0.75;
-    // the snap itself drops middle→palm to 0.25–0.45 within 1–2 frames.
-    this.pinchMax = 0.35 + 0.15 * k;      // thumb–middle distance that counts as "pressed"
-    this.slamMax = 0.42 + 0.15 * k;       // middle tip must land this close to the palm
-    this.dropMin = 0.32 - 0.12 * k;       // ...having dropped at least this much
-    this.dropWindowMs = 300;              // ...within this much time
-    this.windowMs = 250 + 250 * k;        // max time between thumb contact and the slam
-    this.dropoutMs = 700;                 // forget a hand after this long out of view
+
+    // Contact threshold (generous to accommodate steep viewing angles & side profiles)
+    this.pinchMax = 0.44 + 0.16 * k;        // ~0.54 at 65%
+
+    // Slam threshold: landing distance of middle finger to thenar/palm
+    this.slamMax = 0.52 + 0.16 * k;         // ~0.62 at 65%
+
+    // Minimum separation: thumb and middle must pull apart during the snap
+    this.separationMin = 0.50 - 0.10 * k;   // ~0.43 at 65%
+
+    // Dynamic drop requirement
+    this.dropMin = 0.18 - 0.08 * k;         // ~0.13 at 65%
+
+    // Time window: allow holding the armed pinch up to 1000ms while preparing to snap
+    this.armedWindowMs = 650 + 350 * k;     // up to 880ms
+
+    // Hand tracking dropout resilience (motion blur during snap)
+    this.dropoutMs = 600;
   }
 
-  /**
-   * @param hands  [{ world: 21 landmarks (metres), label }] — label is a stable per-slot key, not
-   *               handedness (MediaPipe flips Left/Right mid-snap on blurry frames)
-   * @param now    ms timestamp
-   * @param appState 'live' | 'vanishing' | 'gone' | 'returning'
-   */
   update(hands, now, appState) {
     const events = [];
-    let status = hands.length ? 'Hand tracked' : 'No hand in view';
+    let status = hands && hands.length ? 'Hand tracked' : 'No hand in view';
     const debug = [];
-    let anyPalm = false;
+    let anyOpenPalm = false;
     const seen = new Set();
 
-    for (const h of hands) {
-      const f = handFeatures(h.world);
-      const key = h.label || 'hand';
+    for (const h of (hands || [])) {
+      if (!h || !h.world) continue;
+      const f = handFeatures(h.world, h.landmarks);
+      if (!f) continue;
+
+      const key = h.label || 'hand1';
       seen.add(key);
+
       let st = this.hands.get(key);
-      if (!st) { st = { lastArmAt: -1e9, lastSeenAt: now, hist: [] }; this.hands.set(key, st); }
+      if (!st) {
+        st = {
+          lastArmedAt: -1e9,
+          lastSeenAt: now,
+          armPinchDist: 999,
+          peakSlamDist: 0,
+          hist: [],
+          phase: 'idle'
+        };
+        this.hands.set(key, st);
+      }
       st.lastSeenAt = now;
 
-      const openPalm = f.extIndex > 1.2 && f.extMiddle > 1.2 && f.extRing > 1.15 && f.extPinky > 1.1 &&
-        f.spread > 0.75 && f.thumbOut > 1.0 && f.thumbMiddle > 1.0;
-      if (f.thumbMiddle < this.pinchMax && !openPalm) st.lastArmAt = now;
+      // -----------------------------------------------------------------
+      // 1. OPEN PALM RECOGNITION (Angle-Invariant Bone-Chain Straightness)
+      // -----------------------------------------------------------------
+      const isIndexStraight = f.extIndex > 1.25;
+      const isMiddleStraight = f.extMiddle > 1.25;
+      const isRingStraight = f.extRing > 1.18;
+      const isPinkyStraight = f.extPinky > 1.12;
 
-      // Peak middle→palm distance over the last few hundred ms (the "cocked" finger).
-      st.hist = st.hist.filter((p) => now - p.t <= this.dropWindowMs);
-      const peak = st.hist.reduce((m, p) => Math.max(m, p.mp), 0);
-      st.hist.push({ t: now, mp: f.middleToPalm });
+      const openPalm = isIndexStraight && isMiddleStraight && isRingStraight && isPinkyStraight &&
+                       f.effectivePinch > 0.60 && f.thumbOut > 0.70;
 
-      const armed = now - st.lastArmAt <= this.windowMs;
-      let phase = armed ? 'armed' : 'idle';
-      if (armed && f.middleToPalm < this.slamMax && peak - f.middleToPalm >= this.dropMin) {
-        phase = 'snap';
-        st.lastArmAt = -1e9;
+      if (openPalm) {
+        anyOpenPalm = true;
+      }
+
+      // -----------------------------------------------------------------
+      // 2. FINGER SNAP GESTURE (Angle-Invariant Multi-Point Kinematics)
+      // -----------------------------------------------------------------
+      const isPinching = f.effectivePinch < this.pinchMax && !openPalm;
+
+      if (isPinching) {
+        st.lastArmedAt = now;
+        st.armPinchDist = f.effectivePinch;
+        st.peakSlamDist = Math.max(st.peakSlamDist || 0, f.effectiveSlamDist);
+      }
+
+      st.hist.push({ t: now, dist: f.effectiveSlamDist });
+      st.hist = st.hist.filter((item) => now - item.t <= 450);
+      const recentMaxSlamDist = st.hist.reduce((m, item) => Math.max(m, item.dist), st.peakSlamDist || 0);
+
+      const isArmed = (now - st.lastArmedAt) <= this.armedWindowMs;
+
+      let currentPhase = 'idle';
+      if (isArmed) {
+        currentPhase = isPinching ? 'armed' : 'releasing';
+      }
+
+      // Snap occurs when thumb and middle separate while middle lands in palm/thenar
+      const hasSeparated = f.effectivePinch >= this.separationMin || (f.effectivePinch - st.armPinchDist >= 0.18);
+      const isLandedInPalm = f.effectiveSlamDist < this.slamMax;
+      const hasSlammedDown = (recentMaxSlamDist - f.effectiveSlamDist) >= this.dropMin;
+
+      const snapTriggered = isArmed && !isPinching && (
+        (hasSeparated && isLandedInPalm) ||
+        (hasSeparated && hasSlammedDown) ||
+        (isLandedInPalm && hasSlammedDown)
+      );
+
+      if (snapTriggered) {
+        currentPhase = 'snap';
+        st.lastArmedAt = -1e9;
+        st.peakSlamDist = 0;
         st.hist = [];
-        if (now - this.lastSnapAt > 1200) {
+
+        if (now - this.lastSnapAt > 1100) {
           this.lastSnapAt = now;
           events.push('snap');
         }
       }
-      if (openPalm) anyPalm = true;
-      debug.push({ label: key, phase, ...f });
-    }
-    // Forget hands that disappeared for too long; keep armed ones briefly (snap blur).
-    for (const [key, st] of this.hands) {
-      if (!seen.has(key) && now - st.lastSeenAt > this.dropoutMs) this.hands.delete(key);
+
+      st.phase = currentPhase;
+      debug.push({
+        label: key,
+        phase: currentPhase,
+        thumbMiddle: f.thumbMiddle,
+        effectivePinch: f.effectivePinch,
+        middleToPalm: f.middleToPalm,
+        effectiveSlamDist: f.effectiveSlamDist,
+        extIndex: f.extIndex,
+        extMiddle: f.extMiddle,
+        extRing: f.extRing,
+        extPinky: f.extPinky
+      });
     }
 
-    // ---- Open palm hold (only meaningful while vanished) ----
-    let palm = 0;
-    if (appState === 'gone' && anyPalm) {
-      if (this.palmStart === null) { this.palmStart = now; this.palmFired = false; }
+    for (const [key, st] of this.hands) {
+      if (!seen.has(key) && now - st.lastSeenAt > this.dropoutMs) {
+        this.hands.delete(key);
+      }
+    }
+
+    // -----------------------------------------------------------------
+    // 3. OPEN PALM RECOVERY TIMER (3 Seconds while Vanished)
+    // -----------------------------------------------------------------
+    let palmProgress = 0;
+    if (appState === 'gone' && anyOpenPalm) {
+      if (this.palmStart === null) {
+        this.palmStart = now;
+        this.palmFired = false;
+      }
       this.palmLastSeen = now;
-    } else if (this.palmStart !== null && now - this.palmLastSeen > 350) {
+    } else if (this.palmStart !== null && now - this.palmLastSeen > 400) {
       this.palmStart = null;
     }
+
     if (this.palmStart !== null && appState === 'gone') {
-      palm = Math.min(1, (now - this.palmStart) / this.palmHoldMs);
-      if (palm >= 1 && !this.palmFired) { this.palmFired = true; events.push('palm'); }
+      palmProgress = Math.min(1.0, (now - this.palmStart) / this.palmHoldMs);
+      if (palmProgress >= 1.0 && !this.palmFired) {
+        this.palmFired = true;
+        events.push('palm');
+      }
     }
 
     const phases = debug.map((d) => d.phase);
-    if (phases.includes('snap')) status = 'Snap!';
-    else if (phases.includes('armed')) status = 'Ready — snap!';
-    else if (palm > 0) status = `Hold palm… ${((1 - palm) * this.palmHoldMs / 1000).toFixed(1)}s`;
-    return { events, status, palm, debug };
+    if (phases.includes('snap')) {
+      status = '💥 Snap!';
+    } else if (phases.includes('armed') || phases.includes('releasing')) {
+      status = '🤌 Ready — snap anytime!';
+    } else if (palmProgress > 0) {
+      status = `✋ Hold palm… ${((1 - palmProgress) * (this.palmHoldMs / 1000)).toFixed(1)}s`;
+    }
+
+    return { events, status, palm: palmProgress, debug };
   }
 }

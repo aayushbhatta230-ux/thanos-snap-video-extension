@@ -41,10 +41,10 @@ async function createHand(fileset, delegate) {
   return HandLandmarker.createFromOptions(fileset, {
     baseOptions: { modelAssetPath: new URL('models/hand_landmarker.task', location.href).href, delegate },
     runningMode: 'VIDEO',
-    numHands: 1,
-    minHandDetectionConfidence: 0.5,
-    minHandPresenceConfidence: 0.5,
-    minTrackingConfidence: 0.4
+    numHands: 2, // Track both hands so either hand or sudden switches don't drop tracking
+    minHandDetectionConfidence: 0.35, // Relaxed from 0.5: allows detecting hands at steep angles and side profiles
+    minHandPresenceConfidence: 0.35,  // Keeps hand tracked when tilted or partially foreshortened
+    minTrackingConfidence: 0.3        // Survives rapid snap motion and slight blur
   });
 }
 
@@ -102,7 +102,13 @@ function onMessage(e) {
       bitmap.close();
     }
 
-    const hands = (hr.worldLandmarks || []).map((world, i) => ({ world, label: `hand${i + 1}` }));
+    // Pass both 3D worldLandmarks and 2D normalized landmarks for angle-invariant cross-verification
+    const hands = (hr.worldLandmarks || []).map((world, i) => ({
+      world,
+      landmarks: hr.landmarks ? hr.landmarks[i] : null,
+      label: `hand${i + 1}`
+    }));
+
     const g = tracker.update(hands, ts, msg.state);
     port.postMessage({
       type: 'result',
