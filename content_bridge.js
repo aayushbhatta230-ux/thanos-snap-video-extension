@@ -24,4 +24,9 @@
     else return;
     reply({ ok: true });
   });
+
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !e.data || e.data.type !== 'THANOS_SAVE_SETTING') return;
+    chrome.storage.sync.set({ [e.data.key]: e.data.value });
+  });
 })();

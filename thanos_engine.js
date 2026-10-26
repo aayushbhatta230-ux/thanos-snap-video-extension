@@ -73,7 +73,17 @@
     }
 
     setOptions(o = {}) {
-      if (o.mirror !== undefined) this.mirror = !!o.mirror;
+      if (o.mirror !== undefined) {
+        const nextMirror = !!o.mirror;
+        if (this.mirror !== nextMirror) {
+          this.mirror = nextMirror;
+          this.plateSeeded = false;
+          this.roomLocked = false;
+          this.hasFill = false;
+          if (this.plateCtx) this.plateCtx.clearRect(0, 0, this.W, this.H);
+          this._status(this.mirror ? 'Camera mirrored 🪞' : 'Camera normal');
+        }
+      }
       if (o.duration) this.duration = Number(o.duration);
       if (o.sensitivity !== undefined) {
         this.sensitivity = Number(o.sensitivity);

@@ -90,7 +90,7 @@
     const CSS = `
       :host { all: initial; }
       .wrap { position: fixed; right: 20px; bottom: 96px; z-index: 2147483647; font: 500 12px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #ede9fe; user-select: none; }
-      .card { width: 232px; background: rgba(17, 12, 32, .92); border: 1px solid rgba(167, 139, 250, .35); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.45); backdrop-filter: blur(12px); overflow: hidden; transition: border-color .3s, box-shadow .3s; }
+      .card { width: 240px; background: rgba(17, 12, 32, .92); border: 1px solid rgba(167, 139, 250, .35); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.45); backdrop-filter: blur(12px); overflow: hidden; transition: border-color .3s, box-shadow .3s; }
       .card.gone { border-color: rgba(251, 146, 60, .6); box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 24px rgba(251,146,60,.25); }
       .head { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; cursor: grab; }
       .head:active { cursor: grabbing; }
@@ -108,12 +108,13 @@
       .gone .bar { display: block; }
       .hint { color: #a1a1aa; font-size: 11px; }
       .row { display: flex; gap: 6px; }
-      button.act { all: unset; flex: 1; text-align: center; cursor: pointer; padding: 7px 0; border-radius: 8px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #7c3aed, #a855f7); }
+      button.act { all: unset; flex: 1; text-align: center; cursor: pointer; padding: 7px 0; border-radius: 8px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #7c3aed, #a855f7); font-size: 12px; }
       button.act:hover { filter: brightness(1.1); }
       button.act:active { transform: scale(.97); }
       button.act[hidden] { display: none; }
       button.restore { background: linear-gradient(135deg, #059669, #10b981); }
       button.ghost { background: rgba(255,255,255,.1); font-weight: 600; }
+      button.ghost.active { background: rgba(168, 85, 247, .25); border: 1px solid rgba(168, 85, 247, .45); color: #ede9fe; }
       .hint.warn { color: #fbbf24; }
     `;
 
@@ -129,14 +130,34 @@
       els.snap = h('button', { class: 'act', title: 'Alt+Shift+S', onclick: () => current()?.snap() }, 'Snap');
       els.restore = h('button', { class: 'act restore', title: 'Alt+Shift+R', onclick: () => current()?.restore(), hidden: '' }, 'Restore');
       els.capture = h('button', { class: 'act ghost', title: 'Step out of frame so it learns the room behind you', onclick: () => current()?.captureRoom() }, 'Capture room');
+      els.mirror = h('button', {
+        class: 'act ghost' + (settings.mirrorVideo ? ' active' : ''),
+        title: 'Toggle camera mirroring (Alt+Shift+M or Alt+M)',
+        onclick: toggleMirror
+      }, settings.mirrorVideo ? '🪞 Mirrored' : '🪞 Normal');
       const mini = h('button', { class: 'mini', title: 'Minimise', onclick: (e) => { e.stopPropagation(); minimized = !minimized; els.card.classList.toggle('min', minimized); mini.textContent = minimized ? '+' : '–'; } }, '–');
       els.head = h('div', { class: 'head' }, h('span', { class: 'dot' }), h('span', { class: 'title' }, 'Thanos Snap'), els.state, mini);
       els.card = h('div', { class: 'card' },
         els.head,
-        h('div', { class: 'body' }, els.status, h('div', { class: 'bar' }, els.barFill), els.hint, h('div', { class: 'row' }, els.capture, els.snap, els.restore)));
+        h('div', { class: 'body' },
+          els.status,
+          h('div', { class: 'bar' }, els.barFill),
+          els.hint,
+          h('div', { class: 'row' }, els.capture, els.mirror),
+          h('div', { class: 'row' }, els.snap, els.restore)));
       els.wrap = h('div', { class: 'wrap' }, els.card);
       root.append(els.wrap);
       draggable(els.wrap, els.head);
+    }
+
+    function toggleMirror() {
+      settings.mirrorVideo = !settings.mirrorVideo;
+      for (const en of engines) en.setOptions({ mirror: settings.mirrorVideo });
+      if (els?.mirror) {
+        els.mirror.textContent = settings.mirrorVideo ? '🪞 Mirrored' : '🪞 Normal';
+        els.mirror.classList.toggle('active', !!settings.mirrorVideo);
+      }
+      window.postMessage({ type: 'THANOS_SAVE_SETTING', key: 'mirrorVideo', value: settings.mirrorVideo }, '*');
     }
 
     function draggable(el, handle) {
@@ -182,9 +203,24 @@
         if (!els) return;
         els.hint.textContent = locked ? 'Room locked ✓ — you will vanish completely' : c >= 0.97 ? 'Room fully captured ✓' : `Room captured ${Math.round(c * 100)}% — press Capture room and step out of frame, or the spot behind you will look smudged.`;
         els.hint.classList.toggle('warn', !locked);
+      },
+      toggleMirror,
+      refreshMirror() {
+        if (!els?.mirror) return;
+        els.mirror.textContent = settings.mirrorVideo ? '🪞 Mirrored' : '🪞 Normal';
+        els.mirror.classList.toggle('active', !!settings.mirrorVideo);
       }
     };
   })();
+
+  // ---------------------------------------------------------------- shortcuts
+  window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.isContentEditable) return;
+    if (e.altKey && (e.key === 'm' || e.key === 'M')) {
+      e.preventDefault();
+      hud.toggleMirror();
+    }
+  });
 
   // ---------------------------------------------------------------- messages from the extension
   window.addEventListener('message', (e) => {
@@ -197,6 +233,7 @@
         Object.assign(settings, e.data.payload || {});
         for (const en of engines) en.setOptions({ mirror: settings.mirrorVideo, duration: settings.duration, sensitivity: settings.sensitivity });
         hud.refreshVisibility();
+        hud.refreshMirror();
         break;
       }
     }
